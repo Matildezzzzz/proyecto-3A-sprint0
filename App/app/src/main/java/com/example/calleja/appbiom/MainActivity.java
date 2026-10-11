@@ -1,435 +1,446 @@
 package com.example.calleja.appbiom;
 
 import android.Manifest;
+import android.app.Activity;
 import android.bluetooth.BluetoothAdapter;
-import android.bluetooth.BluetoothDevice;
 import android.bluetooth.BluetoothManager;
 import android.bluetooth.le.BluetoothLeScanner;
 import android.bluetooth.le.ScanCallback;
-import android.bluetooth.le.ScanFilter;
 import android.bluetooth.le.ScanRecord;
 import android.bluetooth.le.ScanResult;
 import android.bluetooth.le.ScanSettings;
-import android.content.Intent;
+import android.content.Context;
 import android.content.pm.PackageManager;
+import android.location.LocationManager;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
 import android.util.Log;
-import android.view.View;
+import android.util.SparseArray;
+import android.widget.Button;
+import android.widget.LinearLayout;
+import android.widget.ScrollView;
 import android.widget.TextView;
 
-import androidx.appcompat.app.AppCompatActivity;
-import androidx.core.app.ActivityCompat;
-import androidx.core.content.ContextCompat;
-
 import java.nio.charset.StandardCharsets;
-import java.util.Collections;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.HashSet;
+import java.util.List;
 import java.util.Locale;
+import java.util.Set;
 
-public class MainActivity extends AppCompatActivity {
+public class MainActivity extends Activity {
 
     private static final String TAG = "AppBiom";
-    private static final int CODIGO_PERMISOS = 11223344;
-    private static final int CODIGO_ACTIVAR_BLUETOOTH = 11223345;
 
-    private static final String NOMBRE_ARDUINO = "Matilde";
-    private static final String UUID_PROYECTO = "EPSG-GTI-PROY-3A";
+    private static final int CODIGO_PERMISOS = 1001;
+    private static final int TIEMPO_ESCANEO_MS = 15000;
+
     private static final int ID_FABRICANTE_APPLE = 0x004C;
+    private static final String UUID_PROYECTO = "EPSG-GTI-PROY-3A";
+    private static final String NOMBRE_ARDUINO = "Matilde";
 
-    private BluetoothAdapter adaptadorBluetooth;
+    private BluetoothAdapter adaptador;
     private BluetoothLeScanner escaner;
-    private ScanCallback callbackEscaneo;
+    private ScanCallback callback;
 
     private TextView textoEstado;
-    private TextView textoUltimaMedida;
-    private TextView textoResultadoEnvio;
+    private TextView textoResultados;
+    private Button botonBuscar;
+    private Button botonDetener;
 
-    private boolean buscarSoloArduino = false;
-    private boolean escaneoActivo = false;
+    private final Handler handler = new Handler(Looper.getMainLooper());
+    private final Set<String> dispositivosMostrados = new HashSet<>();
 
-    // Se mantiene un contador por tipo de sensor para no repetir lecturas.
-    private final int[] ultimoContadorPorTipo = new int[256];
-    private final boolean[] hayContadorPorTipo = new boolean[256];
+    private boolean escaneando = false;
+    private int anunciosRecibidos = 0;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        setContentView(R.layout.activity_main);
 
-        textoEstado = findViewById(R.id.textoEstado);
-        textoUltimaMedida = findViewById(R.id.textoUltimaMedida);
-        textoResultadoEnvio = findViewById(R.id.textoResultadoEnvio);
+        crearInterfaz();
 
-        textoEstado.setText("Detenido");
-        textoUltimaMedida.setText("Todavía no se han recibido medidas");
-        textoResultadoEnvio.setText("Envío al servidor pendiente");
-
-        inicializarBluetooth();
-    }
-
-    private boolean tienePermisosNecesarios() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            return ContextCompat.checkSelfPermission(
-                    this, Manifest.permission.BLUETOOTH_SCAN
-            ) == PackageManager.PERMISSION_GRANTED
-                    && ContextCompat.checkSelfPermission(
-                    this, Manifest.permission.BLUETOOTH_CONNECT
-            ) == PackageManager.PERMISSION_GRANTED;
-        }
-
-        return ContextCompat.checkSelfPermission(
-                this, Manifest.permission.ACCESS_FINE_LOCATION
-        ) == PackageManager.PERMISSION_GRANTED;
-    }
-
-    private void pedirPermisosNecesarios() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            ActivityCompat.requestPermissions(
-                    this,
-                    new String[]{
-                            Manifest.permission.BLUETOOTH_SCAN,
-                            Manifest.permission.BLUETOOTH_CONNECT
-                    },
-                    CODIGO_PERMISOS
-            );
-        } else {
-            ActivityCompat.requestPermissions(
-                    this,
-                    new String[]{Manifest.permission.ACCESS_FINE_LOCATION},
-                    CODIGO_PERMISOS
-            );
-        }
-    }
-
-    private void inicializarBluetooth() {
         BluetoothManager manager =
-                (BluetoothManager) getSystemService(BLUETOOTH_SERVICE);
+                (BluetoothManager) getSystemService(Context.BLUETOOTH_SERVICE);
 
-        if (manager == null) {
-            textoEstado.setText("Error: Bluetooth no disponible");
+        if (manager != null) {
+            adaptador = manager.getAdapter();
+        }
+
+        if (adaptador == null) {
+            mostrarEstado("Este móvil no dispone de Bluetooth.");
+            botonBuscar.setEnabled(false);
             return;
         }
 
-        adaptadorBluetooth = manager.getAdapter();
-
-        if (adaptadorBluetooth == null) {
-            textoEstado.setText("Este móvil no tiene Bluetooth");
-            return;
-        }
-
-        if (!tienePermisosNecesarios()) {
-            textoEstado.setText("Esperando permisos de Bluetooth...");
-            pedirPermisosNecesarios();
-            return;
-        }
-
-        prepararEscaner();
+        mostrarEstado("Listo. Enciende el Arduino y pulsa Buscar.");
     }
 
-    private void prepararEscaner() {
-        if (adaptadorBluetooth == null) {
+    private void crearInterfaz() {
+        LinearLayout principal = new LinearLayout(this);
+        principal.setOrientation(LinearLayout.VERTICAL);
+        principal.setPadding(24, 24, 24, 24);
+
+        textoEstado = new TextView(this);
+        textoEstado.setTextSize(18);
+        textoEstado.setText("Iniciando...");
+        principal.addView(textoEstado);
+
+        botonBuscar = new Button(this);
+        botonBuscar.setText("Buscar dispositivos BLE");
+        principal.addView(botonBuscar);
+
+        botonDetener = new Button(this);
+        botonDetener.setText("Detener búsqueda");
+        botonDetener.setEnabled(false);
+        principal.addView(botonDetener);
+
+        TextView titulo = new TextView(this);
+        titulo.setText("Resultados del escaneo:");
+        titulo.setTextSize(16);
+        principal.addView(titulo);
+
+        textoResultados = new TextView(this);
+        textoResultados.setTextSize(13);
+        textoResultados.setTextIsSelectable(true);
+
+        ScrollView scroll = new ScrollView(this);
+        scroll.addView(textoResultados);
+        principal.addView(
+                scroll,
+                new LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.MATCH_PARENT, 0, 1
+                )
+        );
+
+        setContentView(principal);
+
+        botonBuscar.setOnClickListener(v -> comprobarPermisosYBuscar());
+        botonDetener.setOnClickListener(v -> detenerEscaneo());
+    }
+
+    // ------------------------------------------------------------------
+    // CAMBIO: en Android 12+ también se pide ubicación, porque sin ella
+    // Android no entrega los anuncios iBeacon a la app.
+    // ------------------------------------------------------------------
+    private String[] permisosNecesarios() {
+        List<String> permisos = new ArrayList<>();
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            permisos.add(Manifest.permission.BLUETOOTH_SCAN);
+            permisos.add(Manifest.permission.BLUETOOTH_CONNECT);
+        }
+
+        permisos.add(Manifest.permission.ACCESS_FINE_LOCATION);
+
+        return permisos.toArray(new String[0]);
+    }
+
+    private boolean tienePermisos() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) {
+            return true;
+        }
+
+        for (String permiso : permisosNecesarios()) {
+            if (checkSelfPermission(permiso) != PackageManager.PERMISSION_GRANTED) {
+                Log.w(TAG, "PASO 0 | Falta el permiso " + permiso);
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    // ------------------------------------------------------------------
+    // CAMBIO: muchos móviles no entregan resultados de escaneo BLE si la
+    // ubicación del sistema (el "GPS" del panel rápido) está apagada.
+    // ------------------------------------------------------------------
+    private boolean ubicacionActivada() {
+        LocationManager lm =
+                (LocationManager) getSystemService(Context.LOCATION_SERVICE);
+
+        if (lm == null) {
+            return false;
+        }
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            return lm.isLocationEnabled();
+        }
+
+        return lm.isProviderEnabled(LocationManager.GPS_PROVIDER)
+                || lm.isProviderEnabled(LocationManager.NETWORK_PROVIDER);
+    }
+
+    private void comprobarPermisosYBuscar() {
+        if (!tienePermisos()) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                requestPermissions(permisosNecesarios(), CODIGO_PERMISOS);
+            }
             return;
         }
 
-        try {
-            if (!adaptadorBluetooth.isEnabled()) {
-                textoEstado.setText("Activa el Bluetooth para continuar");
-                Intent intent = new Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE);
-                startActivityForResult(intent, CODIGO_ACTIVAR_BLUETOOTH);
-                return;
-            }
-
-            escaner = adaptadorBluetooth.getBluetoothLeScanner();
-
-            if (escaner == null) {
-                textoEstado.setText("No se ha podido iniciar el escáner BLE");
-            } else {
-                textoEstado.setText("Bluetooth preparado. Pulsa un botón para buscar.");
-            }
-        } catch (SecurityException e) {
-            textoEstado.setText("Faltan permisos de Bluetooth");
-            Log.e(TAG, "No se pudo preparar Bluetooth", e);
-        }
+        iniciarEscaneo();
     }
 
     @Override
     public void onRequestPermissionsResult(
-            int requestCode, String[] permissions, int[] grantResults) {
+            int requestCode, String[] permissions, int[] grantResults
+    ) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
 
         if (requestCode == CODIGO_PERMISOS) {
-            if (tienePermisosNecesarios()) {
-                prepararEscaner();
+            if (tienePermisos()) {
+                iniciarEscaneo();
             } else {
-                textoEstado.setText("Permisos denegados. No se puede buscar.");
+                mostrarEstado(
+                        "Faltan permisos (Bluetooth y Ubicación). "
+                                + "Autorízalos en Ajustes > Aplicaciones > AppBiom."
+                );
             }
         }
     }
 
-    @Override
-    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
-        super.onActivityResult(requestCode, resultCode, data);
-
-        if (requestCode == CODIGO_ACTIVAR_BLUETOOTH) {
-            if (resultCode == RESULT_OK) {
-                prepararEscaner();
-            } else {
-                textoEstado.setText("Bluetooth desactivado");
-            }
-        }
-    }
-
-    public void botonBuscarDispositivosBTLEPulsado(View view) {
-        buscarSoloArduino = false;
-        iniciarEscaneo(false);
-    }
-
-    public void botonBuscarNuestroDispositivoBTLEPulsado(View view) {
-        buscarSoloArduino = true;
-        iniciarEscaneo(true);
-    }
-
-    public void botonDetenerBusquedaDispositivosBTLEPulsado(View view) {
-        detenerEscaneo();
-        textoEstado.setText("Detenido");
-    }
-
-    private void iniciarEscaneo(boolean soloArduino) {
-        if (!tienePermisosNecesarios()) {
-            pedirPermisosNecesarios();
-            textoEstado.setText("Concede los permisos y vuelve a pulsar el botón");
+    private void iniciarEscaneo() {
+        if (!tienePermisos()) {
+            comprobarPermisosYBuscar();
             return;
         }
 
+        if (adaptador == null || !adaptador.isEnabled()) {
+            mostrarEstado("Activa el Bluetooth del móvil.");
+            return;
+        }
+
+        if (!ubicacionActivada()) {
+            mostrarEstado("Activa la Ubicación del móvil (panel rápido) y vuelve a buscar.");
+            Log.w(TAG, "PASO 0 | La ubicación del sistema está desactivada");
+            return;
+        }
+
+        escaner = adaptador.getBluetoothLeScanner();
+
         if (escaner == null) {
-            prepararEscaner();
-            if (escaner == null) {
-                return;
-            }
+            mostrarEstado("No se ha podido obtener el escáner BLE.");
+            return;
         }
 
         detenerEscaneo();
-        buscarSoloArduino = soloArduino;
 
-        callbackEscaneo = new ScanCallback() {
+        dispositivosMostrados.clear();
+        anunciosRecibidos = 0;
+        textoResultados.setText("");
+
+        callback = new ScanCallback() {
             @Override
             public void onScanResult(int callbackType, ScanResult resultado) {
-                procesarDispositivoEncontrado(resultado);
+                procesarResultado(resultado);
+            }
+
+            @Override
+            public void onBatchScanResults(List<ScanResult> resultados) {
+                for (ScanResult resultado : resultados) {
+                    procesarResultado(resultado);
+                }
             }
 
             @Override
             public void onScanFailed(int errorCode) {
-                runOnUiThread(() ->
-                        textoEstado.setText("Error de escaneo Bluetooth: " + errorCode));
-                Log.e(TAG, "Error de escaneo: " + errorCode);
+                escaneando = false;
+
+                runOnUiThread(() -> {
+                    mostrarEstado("Error al escanear: " + errorCode);
+                    botonBuscar.setEnabled(true);
+                    botonDetener.setEnabled(false);
+                });
+
+                Log.e(TAG, "Fallo de escaneo: " + errorCode);
             }
-
-
         };
 
-        try {
-            // Escaneo sin filtro del sistema: algunos dispositivos no anuncian
-            // su nombre en todos los paquetes. Filtramos por nombre en Java.
-            escaner.startScan(
-                    Collections.<ScanFilter>emptyList(),
-                    new ScanSettings.Builder()
-                            .setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY)
-                            .build(),
-                    callbackEscaneo
-            );
+        ScanSettings ajustes = new ScanSettings.Builder()
+                .setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY)
+                .build();
 
-            escaneoActivo = true;
-            textoEstado.setText(soloArduino
-                    ? "Buscando " + NOMBRE_ARDUINO + "..."
-                    : "Buscando todos los dispositivos BLE...");
+        try {
+            // Sin filtros: recibe anuncios de todos los dispositivos BLE.
+            escaner.startScan(null, ajustes, callback);
+
+            escaneando = true;
+            botonBuscar.setEnabled(false);
+            botonDetener.setEnabled(true);
+            mostrarEstado("Buscando dispositivos BLE durante 15 segundos...");
+            Log.i(TAG, "PASO 0 | Escaneo iniciado (permisos OK, BT OK, ubicación OK)");
+
+            handler.postDelayed(() -> {
+                if (escaneando) {
+                    detenerEscaneo();
+                    mostrarEstado("Búsqueda finalizada. Revisa los resultados.");
+                    Log.i(TAG, "Escaneo terminado. Anuncios recibidos: " + anunciosRecibidos);
+                }
+            }, TIEMPO_ESCANEO_MS);
+
         } catch (SecurityException e) {
-            escaneoActivo = false;
-            textoEstado.setText("Sin permisos para escanear Bluetooth");
-            Log.e(TAG, "No se pudo iniciar el escaneo", e);
+            mostrarEstado("Android ha denegado el permiso Bluetooth.");
+            Log.e(TAG, "Sin permiso para escanear", e);
         }
     }
-    private void procesarDispositivoEncontrado(ScanResult resultado) {
-        BluetoothDevice dispositivo = resultado.getDevice();
+
+    private void procesarResultado(ScanResult resultado) {
+        anunciosRecibidos++;
+
         ScanRecord registro = resultado.getScanRecord();
 
-        Log.d(TAG, "ANUNCIO COMPLETO: " + registro);
-        Log.d(TAG, "NOMBRE DEL ANUNCIO: " + registro.getDeviceName());
-
-        byte[] fabricante =
-                registro.getManufacturerSpecificData(0x004C);
-
-        if (fabricante != null) {
-            StringBuilder hex = new StringBuilder();
-
-            for (byte b : fabricante) {
-                hex.append(String.format("%02X ", b & 0xFF));
-            }
-
-            Log.d(TAG, "DATOS APPLE: " + hex);
-        } else {
-            Log.d(TAG, "SIN DATOS DE FABRICANTE APPLE");
-        }
-
         if (registro == null) {
+            Log.d(TAG, "Anuncio recibido sin ScanRecord");
             return;
         }
 
         String nombre = registro.getDeviceName();
 
         if (nombre == null || nombre.isEmpty()) {
-            try {
-                nombre = dispositivo.getName();
-            } catch (SecurityException e) {
-                Log.e(TAG, "No se puede leer el nombre", e);
-            }
+            nombre = "(sin nombre en el anuncio)";
         }
-
-        final String nombreFinal =
-                (nombre == null) ? "(sin nombre)" : nombre;
 
         int rssi = resultado.getRssi();
 
-        Log.d(TAG, "BLE: " + nombreFinal + " RSSI=" + rssi);
+        // ------------------------------------------------------------
+        // PASO 1: ¿llega algún anuncio del Arduino? (por nombre, que va
+        // en la respuesta al escaneo). Se muestran los bytes en bruto.
+        // ------------------------------------------------------------
+        if (NOMBRE_ARDUINO.equals(nombre)) {
+            Log.i(TAG, "PASO 1 | Anuncio de " + NOMBRE_ARDUINO
+                    + " RSSI=" + rssi
+                    + " bytes=" + bytesHex(registro.getBytes()));
+        }
 
-        // Buscar los datos iBeacon de Apple.
-        byte[] datosFabricante =
-                registro.getManufacturerSpecificData(ID_FABRICANTE_APPLE);
+        SparseArray<byte[]> fabricantes = registro.getManufacturerSpecificData();
+        byte[] datosApple = fabricantes == null ? null : fabricantes.get(ID_FABRICANTE_APPLE);
+
+        // ------------------------------------------------------------
+        // PASO 2: datos de fabricante Apple (0x004C). Android ya quita
+        // los 2 bytes del ID, así que una trama iBeacon empieza por 02 15
+        // y mide 23 bytes.
+        // ------------------------------------------------------------
+        if (datosApple != null) {
+            Log.d(TAG, "PASO 2 | Apple de " + nombre
+                    + ", longitud=" + datosApple.length
+                    + ", datos=" + bytesHex(datosApple));
+        }
 
         boolean esNuestroBeacon = false;
+        int major = -1;
+        int minor = -1;
+        int txPower = 0;
+        String uuid = "";
 
-        if (datosFabricante != null && datosFabricante.length >= 23) {
-            boolean prefijoCorrecto =
-                    (datosFabricante[0] & 0xFF) == 0x02
-                            && (datosFabricante[1] & 0xFF) == 0x15;
+        if (datosApple != null
+                && datosApple.length >= 23
+                && (datosApple[0] & 0xFF) == 0x02
+                && (datosApple[1] & 0xFF) == 0x15) {
 
-            if (prefijoCorrecto) {
-                byte[] uuidBytes = new byte[16];
+            byte[] uuidBytes = Arrays.copyOfRange(datosApple, 2, 18);
+            uuid = new String(uuidBytes, StandardCharsets.US_ASCII);
 
-                System.arraycopy(
-                        datosFabricante, 2, uuidBytes, 0, 16);
+            major = ((datosApple[18] & 0xFF) << 8) | (datosApple[19] & 0xFF);
+            minor = ((datosApple[20] & 0xFF) << 8) | (datosApple[21] & 0xFF);
+            txPower = datosApple[22];
 
-                String uuid = new String(
-                        uuidBytes, StandardCharsets.US_ASCII);
+            esNuestroBeacon = UUID_PROYECTO.equals(uuid);
 
-                esNuestroBeacon = UUID_PROYECTO.equals(uuid);
-
-                Log.d(TAG, "Beacon detectado: " + nombreFinal
-                        + ", UUID=" + uuid);
-            }
+            // PASO 3: ¿el UUID coincide?
+            Log.i(TAG, "PASO 3 | iBeacon detectado. UUID=[" + uuid
+                    + "] coincide=" + esNuestroBeacon
+                    + " major=" + major + " minor=" + minor);
         }
 
-        if (buscarSoloArduino) {
-            // Identificar por UUID, no por el nombre.
-            if (!esNuestroBeacon) {
-                return;
-            }
+        final String nombreFinal = nombre;
+        final String uuidFinal = uuid;
+        final int majorFinal = major;
+        final int minorFinal = minor;
+        final int txPowerFinal = txPower;
+        final boolean encontrado = esNuestroBeacon;
 
-            runOnUiThread(() ->
-                    textoEstado.setText(
-                            "Beacon encontrado: " + nombreFinal));
-
-            procesarTramaIBeacon(datosFabricante);
-        } else {
-            runOnUiThread(() ->
-                    textoEstado.setText(
-                            "Buscando todos... Último: "
-                                    + nombreFinal + " (RSSI "
-                                    + rssi + " dBm)"));
-        }
-    }
-
-    private void procesarTramaIBeacon(byte[] datos) {
-        // Los datos de fabricante iBeacon normalmente tienen esta estructura:
-        // 0x02, 0x15, UUID (16 bytes), major (2), minor (2), txPower (1).
-        if (datos == null || datos.length < 23) {
-            Log.d(TAG, "Datos iBeacon demasiado cortos");
-            return;
-        }
-
-        if ((datos[0] & 0xFF) != 0x02 || (datos[1] & 0xFF) != 0x15) {
-            Log.d(TAG, "Los datos no tienen el prefijo iBeacon esperado");
-            return;
-        }
-
-        byte[] uuidBytes = new byte[16];
-        System.arraycopy(datos, 2, uuidBytes, 0, 16);
-        String uuid = new String(uuidBytes, StandardCharsets.US_ASCII);
-
-        if (!UUID_PROYECTO.equals(uuid)) {
-            Log.d(TAG, "UUID ignorado: " + uuid);
-            return;
-        }
-
-        int major = ((datos[18] & 0xFF) << 8) | (datos[19] & 0xFF);
-        int minor = ((datos[20] & 0xFF) << 8) | (datos[21] & 0xFF);
-
-        /*
-         * IMPORTANTE: esta interpretación supone que el Arduino codifica:
-         * byte alto de major = tipo de sensor (11 CO2, 12 temperatura,
-         * 13 ruido, 14 NO2); byte bajo de major = contador (0..255);
-         * minor = valor numérico de la medida.
-         *
-         * Si el emisor usa otra distribución, hay que cambiar estas líneas
-         * para que coincidan con el código Arduino.
-         */
-        int tipo = (major >> 8) & 0xFF;
-        int contador = major & 0xFF;
-        int valor = minor;
-
-        if (hayContadorPorTipo[tipo]
-                && ultimoContadorPorTipo[tipo] == contador) {
-            Log.d(TAG, "Medida repetida ignorada. Tipo=" + tipo
-                    + ", contador=" + contador);
-            return;
-        }
-
-        ultimoContadorPorTipo[tipo] = contador;
-        hayContadorPorTipo[tipo] = true;
-
-        String nombreTipo = nombreTipoSensor(tipo);
-        String medida = String.format(
-                Locale.getDefault(),
-                "%s = %d (contador %d)",
-                nombreTipo, valor, contador
+        // Mostrar cada dispositivo una sola vez, excepto el beacon objetivo.
+        String clave = nombreFinal + "|" + Arrays.toString(
+                datosApple == null ? new byte[0] : datosApple
         );
 
-        runOnUiThread(() -> {
-            textoEstado.setText("Recibiendo medidas de " + NOMBRE_ARDUINO);
-            textoUltimaMedida.setText(medida);
-            textoResultadoEnvio.setText("Envío desactivado (pendiente)");
-        });
+        if (!encontrado && !dispositivosMostrados.add(clave)) {
+            return;
+        }
 
-        Log.d(TAG, "UUID correcto: " + uuid);
-        Log.d(TAG, "major=" + major + ", minor=" + minor);
-        Log.d(TAG, "Medida nueva: " + medida);
+        runOnUiThread(() -> {
+            if (encontrado) {
+                mostrarEstado("¡BEACON ENCONTRADO: " + nombreFinal + "!");
+                agregarResultado(
+                        "***** NUESTRO BEACON *****\n"
+                                + "Nombre: " + nombreFinal + "\n"
+                                + "UUID: " + uuidFinal + "\n"
+                                + "Major: " + majorFinal + "\n"
+                                + "Minor: " + minorFinal + "\n"
+                                + "Tx Power anunciado: " + txPowerFinal + "\n"
+                                + "RSSI: " + rssi + " dBm\n\n"
+                );
+            } else {
+                String detalle = "Dispositivo: " + nombreFinal
+                        + " | RSSI: " + rssi + " dBm";
+
+                if (datosApple != null) {
+                    detalle += "\nFabricante 0x004C: " + bytesHex(datosApple);
+                }
+
+                agregarResultado(detalle + "\n\n");
+            }
+        });
     }
 
-    private String nombreTipoSensor(int tipo) {
-        switch (tipo) {
-            case 11:
-                return "CO2";
-            case 12:
-                return "Temperatura";
-            case 13:
-                return "Ruido";
-            case 14:
-                return "NO2";
-            default:
-                return "Sensor " + tipo;
+    private String bytesHex(byte[] datos) {
+        if (datos == null) {
+            return "(null)";
         }
+
+        StringBuilder resultado = new StringBuilder();
+
+        for (byte b : datos) {
+            resultado.append(String.format(Locale.US, "%02X ", b & 0xFF));
+        }
+
+        return resultado.toString().trim();
+    }
+
+    private void agregarResultado(String texto) {
+        textoResultados.append(texto);
+    }
+
+    private void mostrarEstado(String texto) {
+        runOnUiThread(() -> textoEstado.setText(texto));
     }
 
     private void detenerEscaneo() {
-        if (escaner != null && callbackEscaneo != null && escaneoActivo) {
+        handler.removeCallbacksAndMessages(null);
+
+        if (escaner != null && callback != null && escaneando) {
             try {
-                escaner.stopScan(callbackEscaneo);
+                if (tienePermisos()) {
+                    escaner.stopScan(callback);
+                }
             } catch (SecurityException e) {
                 Log.e(TAG, "No se pudo detener el escaneo", e);
             }
         }
 
-        callbackEscaneo = null;
-        escaneoActivo = false;
+        escaneando = false;
+
+        if (botonBuscar != null) {
+            botonBuscar.setEnabled(true);
+        }
+
+        if (botonDetener != null) {
+            botonDetener.setEnabled(false);
+        }
     }
 
     @Override
