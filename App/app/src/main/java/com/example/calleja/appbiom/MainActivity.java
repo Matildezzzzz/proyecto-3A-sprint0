@@ -23,6 +23,11 @@ import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
 
+import org.json.JSONObject;
+
+import java.io.OutputStream;
+import java.net.HttpURLConnection;
+import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -47,8 +52,11 @@ public class MainActivity extends Activity {
     private ScanCallback callback;
 
     private TextView textoEstado;
-    private TextView textoResultados;
+    private TextView textoUltimaMedida;
+    private TextView textoResultadoEnvio;
+
     private Button botonBuscar;
+    private Button botonBuscarNuestro;
     private Button botonDetener;
 
     private final Handler handler = new Handler(Looper.getMainLooper());
@@ -61,8 +69,25 @@ public class MainActivity extends Activity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
 
-        crearInterfaz();
+        // Cargar la interfaz diseñada en XML
+        setContentView(R.layout.activity_main);
 
+        // Enlazar los textos del XML
+        textoEstado = findViewById(R.id.textoEstado);
+        textoUltimaMedida = findViewById(R.id.textoUltimaMedida);
+        textoResultadoEnvio = findViewById(R.id.textoResultadoEnvio);
+
+        // Enlazar los tres botones
+        botonBuscarNuestro =
+                findViewById(R.id.botonBuscarNuestroDispositivoBTLE);
+
+        botonBuscar =
+                findViewById(R.id.botonBuscarDispositivosBTLE);
+
+        botonDetener =
+                findViewById(R.id.botonDetenerBusquedaDispositivosBTLE);
+
+        // Obtener Bluetooth
         BluetoothManager manager =
                 (BluetoothManager) getSystemService(Context.BLUETOOTH_SERVICE);
 
@@ -70,56 +95,22 @@ public class MainActivity extends Activity {
             adaptador = manager.getAdapter();
         }
 
+        // Conectar los botones con sus acciones
+        botonBuscar.setOnClickListener(v -> comprobarPermisosYBuscar());
+
+        botonBuscarNuestro.setOnClickListener(v -> comprobarPermisosYBuscar());
+
+        botonDetener.setOnClickListener(v -> detenerEscaneo());
+
+        // Estado inicial
         if (adaptador == null) {
             mostrarEstado("Este móvil no dispone de Bluetooth.");
             botonBuscar.setEnabled(false);
+            botonBuscarNuestro.setEnabled(false);
             return;
         }
 
         mostrarEstado("Listo. Enciende el Arduino y pulsa Buscar.");
-    }
-
-    private void crearInterfaz() {
-        LinearLayout principal = new LinearLayout(this);
-        principal.setOrientation(LinearLayout.VERTICAL);
-        principal.setPadding(24, 24, 24, 24);
-
-        textoEstado = new TextView(this);
-        textoEstado.setTextSize(18);
-        textoEstado.setText("Iniciando...");
-        principal.addView(textoEstado);
-
-        botonBuscar = new Button(this);
-        botonBuscar.setText("Buscar dispositivos BLE");
-        principal.addView(botonBuscar);
-
-        botonDetener = new Button(this);
-        botonDetener.setText("Detener búsqueda");
-        botonDetener.setEnabled(false);
-        principal.addView(botonDetener);
-
-        TextView titulo = new TextView(this);
-        titulo.setText("Resultados del escaneo:");
-        titulo.setTextSize(16);
-        principal.addView(titulo);
-
-        textoResultados = new TextView(this);
-        textoResultados.setTextSize(13);
-        textoResultados.setTextIsSelectable(true);
-
-        ScrollView scroll = new ScrollView(this);
-        scroll.addView(textoResultados);
-        principal.addView(
-                scroll,
-                new LinearLayout.LayoutParams(
-                        LinearLayout.LayoutParams.MATCH_PARENT, 0, 1
-                )
-        );
-
-        setContentView(principal);
-
-        botonBuscar.setOnClickListener(v -> comprobarPermisosYBuscar());
-        botonDetener.setOnClickListener(v -> detenerEscaneo());
     }
 
     // ------------------------------------------------------------------
@@ -231,7 +222,7 @@ public class MainActivity extends Activity {
 
         dispositivosMostrados.clear();
         anunciosRecibidos = 0;
-        textoResultados.setText("");
+        textoUltimaMedida.setText("");
 
         callback = new ScanCallback() {
             @Override
@@ -384,6 +375,7 @@ public class MainActivity extends Activity {
                                 + "Tx Power anunciado: " + txPowerFinal + "\n"
                                 + "RSSI: " + rssi + " dBm\n\n"
                 );
+                enviarMedicionesPost();
             } else {
                 String detalle = "Dispositivo: " + nombreFinal
                         + " | RSSI: " + rssi + " dBm";
@@ -412,7 +404,7 @@ public class MainActivity extends Activity {
     }
 
     private void agregarResultado(String texto) {
-        textoResultados.append(texto);
+        textoUltimaMedida.append(texto);
     }
 
     private void mostrarEstado(String texto) {
@@ -447,5 +439,62 @@ public class MainActivity extends Activity {
     protected void onDestroy() {
         detenerEscaneo();
         super.onDestroy();
+    }
+
+    private void enviarMedicionesPost() {
+        new Thread(() -> {
+            HttpURLConnection conexion = null;
+
+            try {
+                // Cambia esta URL por la dirección real de tu API.
+                URL url = new URL("https://mcalgar2.upv.edu.es/api/mediciones.php");
+
+                JSONObject datos = new JSONObject();
+                datos.put("dispositivo", "Matilde");
+                datos.put("co2", 420);
+                datos.put("temperatura", 666);
+                datos.put("ruido", 333);
+                datos.put("no2", 02);
+
+                conexion = (HttpURLConnection) url.openConnection();
+                conexion.setRequestMethod("POST");
+                conexion.setConnectTimeout(5000);
+                conexion.setReadTimeout(5000);
+                conexion.setDoOutput(true);
+                conexion.setRequestProperty(
+                        "Content-Type", "application/json; charset=UTF-8"
+                );
+
+                byte[] cuerpo = datos.toString().getBytes(
+                        java.nio.charset.StandardCharsets.UTF_8
+                );
+
+                try (OutputStream salida = conexion.getOutputStream()) {
+                    salida.write(cuerpo);
+                }
+
+                int codigo = conexion.getResponseCode();
+
+                runOnUiThread(() ->
+                        textoResultadoEnvio.setText(
+                                "POST enviado. Respuesta HTTP: " + codigo
+                        )
+                );
+
+            } catch (Exception e) {
+                Log.e(TAG, "Error al enviar POST", e);
+
+                runOnUiThread(() ->
+                        textoResultadoEnvio.setText(
+                                "Error al enviar POST: " + e.getMessage()
+                        )
+                );
+
+            } finally {
+                if (conexion != null) {
+                    conexion.disconnect();
+                }
+            }
+        }).start();
     }
 }
