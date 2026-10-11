@@ -1,0 +1,91 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="20dp">
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="20dp"
+            android:gravity="center"
+            android:text="App de Biometría"
+            android:textSize="28sp"
+            android:textStyle="bold" />
+
+        <Button
+            android:id="@+id/botonBuscarDispositivosBTLE"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Buscar todos los dispositivos"
+            android:onClick="botonBuscarDispositivosBTLEPulsado" />
+
+        <Button
+            android:id="@+id/botonBuscarNuestroDispositivoBTLE"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Buscar nuestro dispositivo"
+            android:onClick="botonBuscarNuestroDispositivoBTLEPulsado" />
+
+        <Button
+            android:id="@+id/botonDetenerBusquedaDispositivosBTLE"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Detener búsqueda"
+            android:onClick="botonDetenerBusquedaDispositivosBTLEPulsado" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Estado"
+            android:textStyle="bold"
+            android:textSize="18sp"
+            android:layout_marginTop="24dp" />
+
+        <TextView
+            android:id="@+id/textoEstado"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Detenido"
+            android:textSize="16sp"
+            android:paddingTop="8dp" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Última medida recibida"
+            android:textStyle="bold"
+            android:textSize="18sp"
+            android:layout_marginTop="24dp" />
+
+        <TextView
+            android:id="@+id/textoUltimaMedida"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Todavía no se han recibido medidas"
+            android:textSize="16sp"
+            android:paddingTop="8dp" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Resultado del envío"
+            android:textStyle="bold"
+            android:textSize="18sp"
+            android:layout_marginTop="24dp" />
+
+        <TextView
+            android:id="@+id/textoResultadoEnvio"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Envío desactivado (pendiente)"
+            android:textSize="16sp"
+            android:paddingTop="8dp" />
+
+    </LinearLayout>
+</ScrollView>
