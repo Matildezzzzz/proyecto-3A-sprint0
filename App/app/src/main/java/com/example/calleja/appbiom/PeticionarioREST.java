@@ -1,140 +1,126 @@
-
+// ---------------------------------------------------------------------
+// Fichero:     PeticionarioREST.java
+// Descripción: Hace una petición HTTP en segundo plano y devuelve el
+//              código y el cuerpo de la respuesta en el hilo de la
+//              interfaz.
+// Copyright:   (c) 2026 Matilde Calleja
+// Fecha:       14/10/2026
+// Autor:       Matilde Calleja (a partir del código de
+//              Jordi Bataller i Mascarell)
+// Aportación:  Código de la asignatura revisado; se lee también la
+//              respuesta de error del servidor.
+// ---------------------------------------------------------------------
 package com.example.calleja.appbiom;
+
+import android.os.AsyncTask;
+import android.util.Log;
 
 import java.io.BufferedReader;
 import java.io.DataOutputStream;
-import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.net.HttpURLConnection;
 import java.net.URL;
-import android.os.AsyncTask;
-import android.util.Log;
+import java.nio.charset.StandardCharsets;
 
-// ------------------------------------------------------------------------
-// ------------------------------------------------------------------------
 public class PeticionarioREST extends AsyncTask<Void, Void, Boolean> {
 
-    // --------------------------------------------------------------------
-    // --------------------------------------------------------------------
     public interface RespuestaREST {
-        void callback (int codigo, String cuerpo);
+        void callback(int codigo, String cuerpo);
     }
 
-    // --------------------------------------------------------------------
-    // --------------------------------------------------------------------
+    private static final int TIEMPO_MAXIMO_MS = 10000;
+
     private String elMetodo;
     private String urlDestino;
-    private String elCuerpo = null;
+    private String elCuerpo;
     private RespuestaREST laRespuesta;
 
-    private int codigoRespuesta;
+    private int codigoRespuesta = -1;
     private String cuerpoRespuesta = "";
 
-    // --------------------------------------------------------------------
-    // --------------------------------------------------------------------
-    public void hacerPeticionREST (String metodo, String urlDestino, String cuerpo, RespuestaREST  laRespuesta) {
+    // --------------------------------------------------------------
+    // metodo: Text, url: Text, cuerpo: Text, respuesta: RespuestaREST
+    //     --> hacerPeticionREST() -->
+    // Guarda los datos y lanza la petición en segundo plano.
+    // --------------------------------------------------------------
+    public void hacerPeticionREST(String metodo, String urlDestino, String cuerpo, RespuestaREST respuesta) {
         this.elMetodo = metodo;
         this.urlDestino = urlDestino;
         this.elCuerpo = cuerpo;
-        this.laRespuesta = laRespuesta;
+        this.laRespuesta = respuesta;
 
-        this.execute(); // otro thread ejecutará doInBackground()
+        execute();
     }
 
-    // --------------------------------------------------------------------
-    // --------------------------------------------------------------------
-    public PeticionarioREST() {
-        Log.d("clienterestandroid", "constructor()");
-    }
-
-    // --------------------------------------------------------------------
-    // --------------------------------------------------------------------
+    // --------------------------------------------------------------
+    // B <-- doInBackground() <--      (hilo secundario)
+    //
+    // 1. Abrir la conexión con el método y Content-Type JSON.
+    // 2. Si no es GET: escribir el cuerpo.
+    // 3. Leer el código y el cuerpo de la respuesta (o del error).
+    // 4. Devolver true si el código está entre 200 y 399.
+    // --------------------------------------------------------------
     @Override
     protected Boolean doInBackground(Void... params) {
-        Log.d("clienterestandroid", "doInBackground()");
+        HttpURLConnection conexion = null;
 
         try {
+            conexion = (HttpURLConnection) new URL(urlDestino).openConnection();
+            conexion.setConnectTimeout(TIEMPO_MAXIMO_MS);
+            conexion.setReadTimeout(TIEMPO_MAXIMO_MS);
+            conexion.setRequestMethod(elMetodo);
+            conexion.setRequestProperty("Content-Type", "application/json; charset=UTF-8");
+            conexion.setDoInput(true);
 
-            // envio la peticion
-
-            // pagina web para hacer pruebas: URL url = new URL("https://httpbin.org/html");
-            // ordinador del despatx 158.42.144.126 // OK URL url = new URL("http://158.42.144.126:8080");
-
-            Log.d("clienterestandroid", "doInBackground() me conecto a >" + urlDestino + "<");
-
-            URL url = new URL(urlDestino);
-
-            HttpURLConnection connection = (HttpURLConnection) url.openConnection();
-			connection.setRequestProperty( "Content-Type", "application/json; charset-utf-8" );
-            connection.setRequestMethod(this.elMetodo);
-            // connection.setRequestProperty("Accept", "*/*);
-
-            // connection.setUseCaches(false);
-            connection.setDoInput(true);
-
-            if ( ! this.elMetodo.equals("GET") && this.elCuerpo != null ) {
-                Log.d("clienterestandroid", "doInBackground(): no es get, pongo cuerpo");
-                connection.setDoOutput(true);
-                // si no es GET, pongo el cuerpo que me den en la peticin
-                DataOutputStream dos = new DataOutputStream (connection.getOutputStream());
-                dos.writeBytes(this.elCuerpo);
-                dos.flush();
-                dos.close();
-            }
-
-            // ya he enviado la peticin
-            Log.d("clienterestandroid", "doInBackground(): peticin enviada ");
-
-            // ahora obtengo la respuesta
-
-            int rc = connection.getResponseCode();
-            String rm = connection.getResponseMessage();
-            String respuesta = "" + rc + " : " + rm;
-            Log.d("clienterestandroid", "doInBackground() recibo respuesta = " + respuesta);
-            this.codigoRespuesta = rc;
-
-            try {
-
-                InputStream is = connection.getInputStream();
-                BufferedReader br = new BufferedReader(new InputStreamReader(is));
-
-                Log.d("clienterestandroid", "leyendo cuerpo");
-                StringBuilder acumulador = new StringBuilder ();
-                String linea;
-                while ( (linea = br.readLine()) != null) {
-                    Log.d("clienterestandroid", linea);
-                    acumulador.append(linea);
+            if (!"GET".equals(elMetodo) && elCuerpo != null) {
+                conexion.setDoOutput(true);
+                try (DataOutputStream salida = new DataOutputStream(conexion.getOutputStream())) {
+                    salida.write(elCuerpo.getBytes(StandardCharsets.UTF_8));
+                    salida.flush();
                 }
-                Log.d("clienterestandroid", "FIN leyendo cuerpo");
-
-                this.cuerpoRespuesta = acumulador.toString();
-                Log.d("clienterestandroid", "cuerpo recibido=" + this.cuerpoRespuesta);
-
-                connection.disconnect();
-
-            } catch (IOException ex) {
-                // dispara excepcin cuando la respuesta REST no tiene cuerpo y yo intento getInputStream()
-                Log.d("clienterestandroid", "doInBackground() : parece que no hay cuerpo en la respuesta");
             }
 
-            return true; // doInBackground() termina bien
+            codigoRespuesta = conexion.getResponseCode();
+
+            InputStream flujo = (codigoRespuesta >= 200 && codigoRespuesta < 400)
+                    ? conexion.getInputStream()
+                    : conexion.getErrorStream();
+
+            if (flujo != null) {
+                try (BufferedReader lector = new BufferedReader(
+                        new InputStreamReader(flujo, StandardCharsets.UTF_8))) {
+                    StringBuilder respuesta = new StringBuilder();
+                    String linea;
+                    while ((linea = lector.readLine()) != null) {
+                        respuesta.append(linea);
+                    }
+                    cuerpoRespuesta = respuesta.toString();
+                }
+            }
+
+            return codigoRespuesta >= 200 && codigoRespuesta < 400;
 
         } catch (Exception ex) {
-            Log.d("clienterestandroid", "doInBackground(): ocurrio alguna otra excepcion: " + ex.getMessage());
+            Log.e("AppBiom", "Error en petición REST", ex);
+            cuerpoRespuesta = ex.getMessage() != null ? ex.getMessage() : "Error de conexión";
+            return false;
+
+        } finally {
+            if (conexion != null) {
+                conexion.disconnect();
+            }
         }
-
-        return false; // doInBackground() NO termina bien
-    } // ()
-
-    // --------------------------------------------------------------------
-    // --------------------------------------------------------------------
-    protected void onPostExecute(Boolean comoFue) {
-        // llamado tras doInBackground()
-        Log.d("clienterestandroid", "onPostExecute() comoFue = " + comoFue);
-        this.laRespuesta.callback(this.codigoRespuesta, this.cuerpoRespuesta);
     }
 
-} // class
-
-
+    // --------------------------------------------------------------
+    // correcto: B --> onPostExecute() -->      (hilo de la interfaz)
+    // Llama a la respuesta con el código y el cuerpo.
+    // --------------------------------------------------------------
+    @Override
+    protected void onPostExecute(Boolean correcto) {
+        if (laRespuesta != null) {
+            laRespuesta.callback(codigoRespuesta, cuerpoRespuesta);
+        }
+    }
+}

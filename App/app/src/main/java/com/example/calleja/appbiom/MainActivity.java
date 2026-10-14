@@ -1,3 +1,15 @@
+// ---------------------------------------------------------------------
+// Fichero:     MainActivity.java
+// Descripción: Pantalla principal (activity_main.xml). Pide permisos al
+//              abrirse, escanea BLE y muestra lo que pasa. La
+//              interpretación de la medida la hace InterpreteMedida y el
+//              envío al servidor LogicaFake.
+// Copyright:   (c) 2026 Matilde Calleja
+// Fecha:       14/10/2026
+// Autor:       Matilde Calleja
+// Aportación:  Diseño propio; código generado con IA a partir del diseño
+//              y revisado por la autora.
+// ---------------------------------------------------------------------
 package com.example.calleja.appbiom;
 
 import android.Manifest;
@@ -6,31 +18,24 @@ import android.bluetooth.BluetoothAdapter;
 import android.bluetooth.BluetoothManager;
 import android.bluetooth.le.BluetoothLeScanner;
 import android.bluetooth.le.ScanCallback;
+import android.bluetooth.le.ScanFilter;
 import android.bluetooth.le.ScanRecord;
 import android.bluetooth.le.ScanResult;
 import android.bluetooth.le.ScanSettings;
 import android.content.Context;
 import android.content.pm.PackageManager;
+import android.graphics.Color;
 import android.location.LocationManager;
 import android.os.Build;
 import android.os.Bundle;
-import android.os.Handler;
-import android.os.Looper;
 import android.util.Log;
 import android.util.SparseArray;
+import android.view.View;
 import android.widget.Button;
-import android.widget.LinearLayout;
-import android.widget.ScrollView;
 import android.widget.TextView;
 
-import org.json.JSONObject;
-
-import java.io.OutputStream;
-import java.net.HttpURLConnection;
-import java.net.URL;
-import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
-import java.util.Arrays;
+import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
@@ -41,82 +46,105 @@ public class MainActivity extends Activity {
     private static final String TAG = "AppBiom";
 
     private static final int CODIGO_PERMISOS = 1001;
-    private static final int TIEMPO_ESCANEO_MS = 15000;
-
     private static final int ID_FABRICANTE_APPLE = 0x004C;
     private static final String UUID_PROYECTO = "EPSG-GTI-PROY-3A";
-    private static final String NOMBRE_ARDUINO = "Matilde";
+    private static final String NOMBRE_NUESTRO_DISPOSITIVO = "GTI3A-2026";
+    private static final String URL_SERVIDOR = "https://mcalgar2.upv.edu.es/api/mediciones.php";
+
+    private static final int COLOR_OK = Color.parseColor("#0F766E");
+    private static final int COLOR_ERROR = Color.parseColor("#B91C1C");
+    private static final int COLOR_PENDIENTE = Color.parseColor("#92400E");
 
     private BluetoothAdapter adaptador;
     private BluetoothLeScanner escaner;
     private ScanCallback callback;
 
+    private final InterpreteMedida interprete = new InterpreteMedida(UUID_PROYECTO);
+    private final LogicaFake logica = new LogicaFake(URL_SERVIDOR);
+
+    private Button botonBuscarNuestro;
+    private Button botonBuscarTodos;
+    private Button botonDetener;
     private TextView textoEstado;
     private TextView textoUltimaMedida;
     private TextView textoResultadoEnvio;
 
-    private Button botonBuscar;
-    private Button botonBuscarNuestro;
-    private Button botonDetener;
-
-    private final Handler handler = new Handler(Looper.getMainLooper());
-    private final Set<String> dispositivosMostrados = new HashSet<>();
+    private final Set<String> dispositivosEncontrados = new HashSet<>();
 
     private boolean escaneando = false;
-    private int anunciosRecibidos = 0;
+    private boolean enviarAlServidor = false;
+    private int ultimoContadorEnviado = -1;
 
+    // --------------------------------------------------------------
+    // onCreate() -->
+    //
+    // 1. Cargar activity_main.xml y buscar sus vistas.
+    //    (Los botones llaman a sus métodos con android:onClick.)
+    // 2. Obtener el adaptador Bluetooth.
+    // 3. Si faltan permisos: pedirPermisos() (al abrir la app).
+    // --------------------------------------------------------------
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-
-        // Cargar la interfaz diseñada en XML
         setContentView(R.layout.activity_main);
 
-        // Enlazar los textos del XML
+        botonBuscarNuestro = findViewById(R.id.botonBuscarNuestroDispositivoBTLE);
+        botonBuscarTodos = findViewById(R.id.botonBuscarDispositivosBTLE);
+        botonDetener = findViewById(R.id.botonDetenerBusquedaDispositivosBTLE);
         textoEstado = findViewById(R.id.textoEstado);
         textoUltimaMedida = findViewById(R.id.textoUltimaMedida);
         textoResultadoEnvio = findViewById(R.id.textoResultadoEnvio);
 
-        // Enlazar los tres botones
-        botonBuscarNuestro =
-                findViewById(R.id.botonBuscarNuestroDispositivoBTLE);
+        actualizarBotones();
 
-        botonBuscar =
-                findViewById(R.id.botonBuscarDispositivosBTLE);
-
-        botonDetener =
-                findViewById(R.id.botonDetenerBusquedaDispositivosBTLE);
-
-        // Obtener Bluetooth
-        BluetoothManager manager =
-                (BluetoothManager) getSystemService(Context.BLUETOOTH_SERVICE);
-
+        BluetoothManager manager = (BluetoothManager) getSystemService(Context.BLUETOOTH_SERVICE);
         if (manager != null) {
             adaptador = manager.getAdapter();
         }
 
-        // Conectar los botones con sus acciones
-        botonBuscar.setOnClickListener(v -> comprobarPermisosYBuscar());
-
-        botonBuscarNuestro.setOnClickListener(v -> comprobarPermisosYBuscar());
-
-        botonDetener.setOnClickListener(v -> detenerEscaneo());
-
-        // Estado inicial
         if (adaptador == null) {
-            mostrarEstado("Este móvil no dispone de Bluetooth.");
-            botonBuscar.setEnabled(false);
+            mostrarEstado("Este móvil no tiene Bluetooth");
             botonBuscarNuestro.setEnabled(false);
+            botonBuscarTodos.setEnabled(false);
             return;
         }
 
-        mostrarEstado("Listo. Enciende el Arduino y pulsa Buscar.");
+        if (!tienePermisos()) {
+            pedirPermisos();
+        }
     }
 
-    // ------------------------------------------------------------------
-    // CAMBIO: en Android 12+ también se pide ubicación, porque sin ella
-    // Android no entrega los anuncios iBeacon a la app.
-    // ------------------------------------------------------------------
+    // --------------------------------------------------------------
+    // vista: View --> botonBuscarNuestroDispositivoBTLEPulsado() -->
+    // Escanea solo GTI3A-2026 y activa el envío al servidor.
+    // --------------------------------------------------------------
+    public void botonBuscarNuestroDispositivoBTLEPulsado(View vista) {
+        enviarAlServidor = true;
+        iniciarEscaneo(NOMBRE_NUESTRO_DISPOSITIVO);
+    }
+
+    // --------------------------------------------------------------
+    // vista: View --> botonBuscarDispositivosBTLEPulsado() -->
+    // Escanea todo lo de alrededor. NO envía nada al servidor.
+    // --------------------------------------------------------------
+    public void botonBuscarDispositivosBTLEPulsado(View vista) {
+        enviarAlServidor = false;
+        iniciarEscaneo(null);
+    }
+
+    // --------------------------------------------------------------
+    // vista: View --> botonDetenerBusquedaDispositivosBTLEPulsado() -->
+    // --------------------------------------------------------------
+    public void botonDetenerBusquedaDispositivosBTLEPulsado(View vista) {
+        detenerEscaneo();
+        mostrarEstado("Detenido");
+    }
+
+    // --------------------------------------------------------------
+    // [Text] <-- permisosNecesarios() <--
+    // Android 12+: BLUETOOTH_SCAN y BLUETOOTH_CONNECT.
+    // Siempre: ACCESS_FINE_LOCATION.
+    // --------------------------------------------------------------
     private String[] permisosNecesarios() {
         List<String> permisos = new ArrayList<>();
 
@@ -126,10 +154,12 @@ public class MainActivity extends Activity {
         }
 
         permisos.add(Manifest.permission.ACCESS_FINE_LOCATION);
-
         return permisos.toArray(new String[0]);
     }
 
+    // --------------------------------------------------------------
+    // B <-- tienePermisos() <--
+    // --------------------------------------------------------------
     private boolean tienePermisos() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) {
             return true;
@@ -137,21 +167,43 @@ public class MainActivity extends Activity {
 
         for (String permiso : permisosNecesarios()) {
             if (checkSelfPermission(permiso) != PackageManager.PERMISSION_GRANTED) {
-                Log.w(TAG, "PASO 0 | Falta el permiso " + permiso);
                 return false;
             }
         }
-
         return true;
     }
 
-    // ------------------------------------------------------------------
-    // CAMBIO: muchos móviles no entregan resultados de escaneo BLE si la
-    // ubicación del sistema (el "GPS" del panel rápido) está apagada.
-    // ------------------------------------------------------------------
+    // --------------------------------------------------------------
+    // pedirPermisos() -->
+    // --------------------------------------------------------------
+    private void pedirPermisos() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            requestPermissions(permisosNecesarios(), CODIGO_PERMISOS);
+        }
+    }
+
+    // --------------------------------------------------------------
+    // codigo: N, permisos: [Text], resultados: [Z]
+    //     --> onRequestPermissionsResult() -->
+    // --------------------------------------------------------------
+    @Override
+    public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+
+        if (requestCode != CODIGO_PERMISOS) {
+            return;
+        }
+
+        mostrarEstado(tienePermisos()
+                ? "Detenido"
+                : "Faltan permisos. Actívalos en Ajustes > Aplicaciones > AppBiom");
+    }
+
+    // --------------------------------------------------------------
+    // B <-- ubicacionActivada() <--
+    // --------------------------------------------------------------
     private boolean ubicacionActivada() {
-        LocationManager lm =
-                (LocationManager) getSystemService(Context.LOCATION_SERVICE);
+        LocationManager lm = (LocationManager) getSystemService(Context.LOCATION_SERVICE);
 
         if (lm == null) {
             return false;
@@ -165,64 +217,49 @@ public class MainActivity extends Activity {
                 || lm.isProviderEnabled(LocationManager.NETWORK_PROVIDER);
     }
 
-    private void comprobarPermisosYBuscar() {
+    // --------------------------------------------------------------
+    // nombre: Text | nulo --> iniciarEscaneo() -->
+    //
+    // 1. Si faltan permisos: pedirlos y terminar.
+    // 2. Si Bluetooth o Ubicación están apagados: avisar y terminar.
+    // 3. Escanear sin filtro (nombre nulo) o filtrando por nombre,
+    //    con baja latencia y sin límite de tiempo.
+    // 4. Por cada resultado: procesarResultado(resultado)
+    // --------------------------------------------------------------
+    private void iniciarEscaneo(String nombre) {
         if (!tienePermisos()) {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                requestPermissions(permisosNecesarios(), CODIGO_PERMISOS);
-            }
-            return;
-        }
-
-        iniciarEscaneo();
-    }
-
-    @Override
-    public void onRequestPermissionsResult(
-            int requestCode, String[] permissions, int[] grantResults
-    ) {
-        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
-
-        if (requestCode == CODIGO_PERMISOS) {
-            if (tienePermisos()) {
-                iniciarEscaneo();
-            } else {
-                mostrarEstado(
-                        "Faltan permisos (Bluetooth y Ubicación). "
-                                + "Autorízalos en Ajustes > Aplicaciones > AppBiom."
-                );
-            }
-        }
-    }
-
-    private void iniciarEscaneo() {
-        if (!tienePermisos()) {
-            comprobarPermisosYBuscar();
+            pedirPermisos();
             return;
         }
 
         if (adaptador == null || !adaptador.isEnabled()) {
-            mostrarEstado("Activa el Bluetooth del móvil.");
+            mostrarEstado("Activa el Bluetooth del móvil");
             return;
         }
 
         if (!ubicacionActivada()) {
-            mostrarEstado("Activa la Ubicación del móvil (panel rápido) y vuelve a buscar.");
-            Log.w(TAG, "PASO 0 | La ubicación del sistema está desactivada");
+            mostrarEstado("Activa la Ubicación del móvil");
             return;
         }
 
         escaner = adaptador.getBluetoothLeScanner();
-
         if (escaner == null) {
-            mostrarEstado("No se ha podido obtener el escáner BLE.");
+            mostrarEstado("No se ha podido obtener el escáner BLE");
             return;
         }
 
         detenerEscaneo();
+        dispositivosEncontrados.clear();
 
-        dispositivosMostrados.clear();
-        anunciosRecibidos = 0;
-        textoUltimaMedida.setText("");
+        List<ScanFilter> filtros = null;
+        if (nombre != null) {
+            filtros = Collections.singletonList(
+                    new ScanFilter.Builder().setDeviceName(nombre).build());
+        }
+
+        ScanSettings ajustes = new ScanSettings.Builder()
+                .setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY)
+                .build();
 
         callback = new ScanCallback() {
             @Override
@@ -239,262 +276,153 @@ public class MainActivity extends Activity {
 
             @Override
             public void onScanFailed(int errorCode) {
-                escaneando = false;
-
-                runOnUiThread(() -> {
-                    mostrarEstado("Error al escanear: " + errorCode);
-                    botonBuscar.setEnabled(true);
-                    botonDetener.setEnabled(false);
-                });
-
                 Log.e(TAG, "Fallo de escaneo: " + errorCode);
+                escaneando = false;
+                runOnUiThread(() -> actualizarBotones());
+                mostrarEstado("Error al escanear (código " + errorCode + ")");
             }
         };
 
-        ScanSettings ajustes = new ScanSettings.Builder()
-                .setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY)
-                .build();
-
         try {
-            // Sin filtros: recibe anuncios de todos los dispositivos BLE.
-            escaner.startScan(null, ajustes, callback);
-
+            escaner.startScan(filtros, ajustes, callback);
             escaneando = true;
-            botonBuscar.setEnabled(false);
-            botonDetener.setEnabled(true);
-            mostrarEstado("Buscando dispositivos BLE durante 15 segundos...");
-            Log.i(TAG, "PASO 0 | Escaneo iniciado (permisos OK, BT OK, ubicación OK)");
-
-            handler.postDelayed(() -> {
-                if (escaneando) {
-                    detenerEscaneo();
-                    mostrarEstado("Búsqueda finalizada. Revisa los resultados.");
-                    Log.i(TAG, "Escaneo terminado. Anuncios recibidos: " + anunciosRecibidos);
-                }
-            }, TIEMPO_ESCANEO_MS);
+            actualizarBotones();
+            mostrarEstado(nombre == null
+                    ? "Buscando todos los dispositivos..."
+                    : "Buscando " + nombre + "...");
 
         } catch (SecurityException e) {
-            mostrarEstado("Android ha denegado el permiso Bluetooth.");
             Log.e(TAG, "Sin permiso para escanear", e);
+            mostrarEstado("Android ha denegado el permiso Bluetooth");
         }
     }
 
+    // --------------------------------------------------------------
+    // resultado: ResultadoEscaneo --> procesarResultado() -->
+    //
+    // 1. Si el dispositivo es nuevo: anotarlo, escribirlo en el log
+    //    y, si se buscan todos, mostrar cuántos hay.
+    // 2. Si no enviar_al_servidor: terminar.
+    // 3. datos = datos de fabricante 0x004C
+    // 4. Si interprete.esDeNuestroSensor(datos): tratarMedidaRecibida(datos)
+    // --------------------------------------------------------------
     private void procesarResultado(ScanResult resultado) {
-        anunciosRecibidos++;
-
         ScanRecord registro = resultado.getScanRecord();
-
         if (registro == null) {
-            Log.d(TAG, "Anuncio recibido sin ScanRecord");
             return;
         }
 
-        String nombre = registro.getDeviceName();
+        String direccion = resultado.getDevice().getAddress();
 
-        if (nombre == null || nombre.isEmpty()) {
-            nombre = "(sin nombre en el anuncio)";
+        if (dispositivosEncontrados.add(direccion)) {
+            Log.i(TAG, "Dispositivo: " + registro.getDeviceName() + " | " + direccion
+                    + " | " + resultado.getRssi() + " dBm");
+
+            if (!enviarAlServidor) {
+                mostrarEstado("Buscando todos... " + dispositivosEncontrados.size()
+                        + " dispositivos (lista en Logcat)");
+            }
         }
 
-        int rssi = resultado.getRssi();
-
-        // ------------------------------------------------------------
-        // PASO 1: ¿llega algún anuncio del Arduino? (por nombre, que va
-        // en la respuesta al escaneo). Se muestran los bytes en bruto.
-        // ------------------------------------------------------------
-        if (NOMBRE_ARDUINO.equals(nombre)) {
-            Log.i(TAG, "PASO 1 | Anuncio de " + NOMBRE_ARDUINO
-                    + " RSSI=" + rssi
-                    + " bytes=" + bytesHex(registro.getBytes()));
+        if (!enviarAlServidor) {
+            return;
         }
 
         SparseArray<byte[]> fabricantes = registro.getManufacturerSpecificData();
-        byte[] datosApple = fabricantes == null ? null : fabricantes.get(ID_FABRICANTE_APPLE);
+        byte[] datos = fabricantes == null ? null : fabricantes.get(ID_FABRICANTE_APPLE);
 
-        // ------------------------------------------------------------
-        // PASO 2: datos de fabricante Apple (0x004C). Android ya quita
-        // los 2 bytes del ID, así que una trama iBeacon empieza por 02 15
-        // y mide 23 bytes.
-        // ------------------------------------------------------------
-        if (datosApple != null) {
-            Log.d(TAG, "PASO 2 | Apple de " + nombre
-                    + ", longitud=" + datosApple.length
-                    + ", datos=" + bytesHex(datosApple));
+        if (interprete.esDeNuestroSensor(datos)) {
+            tratarMedidaRecibida(datos);
         }
+    }
 
-        boolean esNuestroBeacon = false;
-        int major = -1;
-        int minor = -1;
-        int txPower = 0;
-        String uuid = "";
+    // --------------------------------------------------------------
+    // datos: [Z] --> tratarMedidaRecibida() -->
+    //
+    // 1. medida = interprete.interpretar(datos)
+    // 2. Si medida.contador == ultimo_contador_enviado: terminar.
+    // 3. ultimo_contador_enviado = medida.contador
+    // 4. Mostrar la medida y "Enviando..." en pantalla.
+    // 5. logica.guardarMedida(medida) y mostrar el resultado del envío.
+    // --------------------------------------------------------------
+    private void tratarMedidaRecibida(byte[] datos) {
+        Medida medida = interprete.interpretar(datos);
 
-        if (datosApple != null
-                && datosApple.length >= 23
-                && (datosApple[0] & 0xFF) == 0x02
-                && (datosApple[1] & 0xFF) == 0x15) {
-
-            byte[] uuidBytes = Arrays.copyOfRange(datosApple, 2, 18);
-            uuid = new String(uuidBytes, StandardCharsets.US_ASCII);
-
-            major = ((datosApple[18] & 0xFF) << 8) | (datosApple[19] & 0xFF);
-            minor = ((datosApple[20] & 0xFF) << 8) | (datosApple[21] & 0xFF);
-            txPower = datosApple[22];
-
-            esNuestroBeacon = UUID_PROYECTO.equals(uuid);
-
-            // PASO 3: ¿el UUID coincide?
-            Log.i(TAG, "PASO 3 | iBeacon detectado. UUID=[" + uuid
-                    + "] coincide=" + esNuestroBeacon
-                    + " major=" + major + " minor=" + minor);
-        }
-
-        final String nombreFinal = nombre;
-        final String uuidFinal = uuid;
-        final int majorFinal = major;
-        final int minorFinal = minor;
-        final int txPowerFinal = txPower;
-        final boolean encontrado = esNuestroBeacon;
-
-        // Mostrar cada dispositivo una sola vez, excepto el beacon objetivo.
-        String clave = nombreFinal + "|" + Arrays.toString(
-                datosApple == null ? new byte[0] : datosApple
-        );
-
-        if (!encontrado && !dispositivosMostrados.add(clave)) {
+        if (medida.getContador() == ultimoContadorEnviado) {
             return;
         }
+        ultimoContadorEnviado = medida.getContador();
+
+        String texto = String.format(Locale.getDefault(), "%s = %d  (contador %d)",
+                medida.nombreDelTipo(), medida.getValor(), medida.getContador());
+        Log.i(TAG, "Medida recibida: " + texto);
 
         runOnUiThread(() -> {
-            if (encontrado) {
-                mostrarEstado("¡BEACON ENCONTRADO: " + nombreFinal + "!");
-                agregarResultado(
-                        "***** NUESTRO BEACON *****\n"
-                                + "Nombre: " + nombreFinal + "\n"
-                                + "UUID: " + uuidFinal + "\n"
-                                + "Major: " + majorFinal + "\n"
-                                + "Minor: " + minorFinal + "\n"
-                                + "Tx Power anunciado: " + txPowerFinal + "\n"
-                                + "RSSI: " + rssi + " dBm\n\n"
-                );
-                enviarMedicionesPost();
-            } else {
-                String detalle = "Dispositivo: " + nombreFinal
-                        + " | RSSI: " + rssi + " dBm";
+            textoEstado.setText("Sensor encontrado ✓");
+            textoUltimaMedida.setText(texto);
+            mostrarEnvio("Enviando...", COLOR_PENDIENTE);
 
-                if (datosApple != null) {
-                    detalle += "\nFabricante 0x004C: " + bytesHex(datosApple);
+            logica.guardarMedida(medida, (ok, mensaje) -> {
+                Log.i(TAG, "Envío: ok=" + ok + " " + mensaje);
+                if (ok) {
+                    mostrarEnvio("Enviado al servidor ✓", COLOR_OK);
+                } else {
+                    mostrarEnvio("Error al enviar ✗\n" + mensaje, COLOR_ERROR);
                 }
-
-                agregarResultado(detalle + "\n\n");
-            }
+            });
         });
     }
 
-    private String bytesHex(byte[] datos) {
-        if (datos == null) {
-            return "(null)";
-        }
-
-        StringBuilder resultado = new StringBuilder();
-
-        for (byte b : datos) {
-            resultado.append(String.format(Locale.US, "%02X ", b & 0xFF));
-        }
-
-        return resultado.toString().trim();
-    }
-
-    private void agregarResultado(String texto) {
-        textoUltimaMedida.append(texto);
-    }
-
+    // --------------------------------------------------------------
+    // texto: Text --> mostrarEstado() -->
+    // --------------------------------------------------------------
     private void mostrarEstado(String texto) {
         runOnUiThread(() -> textoEstado.setText(texto));
     }
 
-    private void detenerEscaneo() {
-        handler.removeCallbacksAndMessages(null);
+    // --------------------------------------------------------------
+    // texto: Text, color: Z --> mostrarEnvio() -->
+    // --------------------------------------------------------------
+    private void mostrarEnvio(String texto, int color) {
+        textoResultadoEnvio.setText(texto);
+        textoResultadoEnvio.setTextColor(color);
+    }
 
+    // --------------------------------------------------------------
+    // actualizarBotones() -->
+    // Buscando: solo "Detener" activo. Detenido: lo contrario.
+    // --------------------------------------------------------------
+    private void actualizarBotones() {
+        botonBuscarNuestro.setEnabled(!escaneando);
+        botonBuscarTodos.setEnabled(!escaneando);
+        botonDetener.setEnabled(escaneando);
+    }
+
+    // --------------------------------------------------------------
+    // detenerEscaneo() -->
+    // 1. Si se está escaneando: parar el escaneo.
+    // 2. escaneando = false
+    // 3. actualizarBotones()
+    // --------------------------------------------------------------
+    private void detenerEscaneo() {
         if (escaner != null && callback != null && escaneando) {
             try {
-                if (tienePermisos()) {
-                    escaner.stopScan(callback);
-                }
+                escaner.stopScan(callback);
             } catch (SecurityException e) {
                 Log.e(TAG, "No se pudo detener el escaneo", e);
             }
         }
 
         escaneando = false;
-
-        if (botonBuscar != null) {
-            botonBuscar.setEnabled(true);
-        }
-
-        if (botonDetener != null) {
-            botonDetener.setEnabled(false);
-        }
+        actualizarBotones();
     }
 
+    // --------------------------------------------------------------
+    // onDestroy() -->
+    // --------------------------------------------------------------
     @Override
     protected void onDestroy() {
         detenerEscaneo();
         super.onDestroy();
-    }
-
-    private void enviarMedicionesPost() {
-        new Thread(() -> {
-            HttpURLConnection conexion = null;
-
-            try {
-                // Cambia esta URL por la dirección real de tu API.
-                URL url = new URL("https://mcalgar2.upv.edu.es/api/mediciones.php");
-
-                JSONObject datos = new JSONObject();
-                datos.put("dispositivo", "Matilde");
-                datos.put("co2", 420);
-                datos.put("temperatura", 666);
-                datos.put("ruido", 333);
-                datos.put("no2", 02);
-
-                conexion = (HttpURLConnection) url.openConnection();
-                conexion.setRequestMethod("POST");
-                conexion.setConnectTimeout(5000);
-                conexion.setReadTimeout(5000);
-                conexion.setDoOutput(true);
-                conexion.setRequestProperty(
-                        "Content-Type", "application/json; charset=UTF-8"
-                );
-
-                byte[] cuerpo = datos.toString().getBytes(
-                        java.nio.charset.StandardCharsets.UTF_8
-                );
-
-                try (OutputStream salida = conexion.getOutputStream()) {
-                    salida.write(cuerpo);
-                }
-
-                int codigo = conexion.getResponseCode();
-
-                runOnUiThread(() ->
-                        textoResultadoEnvio.setText(
-                                "POST enviado. Respuesta HTTP: " + codigo
-                        )
-                );
-
-            } catch (Exception e) {
-                Log.e(TAG, "Error al enviar POST", e);
-
-                runOnUiThread(() ->
-                        textoResultadoEnvio.setText(
-                                "Error al enviar POST: " + e.getMessage()
-                        )
-                );
-
-            } finally {
-                if (conexion != null) {
-                    conexion.disconnect();
-                }
-            }
-        }).start();
     }
 }
