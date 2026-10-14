@@ -1,0 +1,273 @@
+<!doctype html>
+<!-- ===================================================================
+     Fichero:     index.html
+     Descripción: Web de AppBiom. Muestra la última medida recibida por
+                  el servidor (la lógica está en pagina.js y logicaFake.js).
+     Copyright:   (c) 2026 Matilde Calleja
+     Fecha:       14/10/2026
+     Autor:       Matilde Calleja
+     Aportación:  Diseño propio; código generado con IA y revisado.
+     =================================================================== -->
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f7f8f5">
+  <title>AppBiom · Resumen</title>
+
+  <style>
+    :root {
+      --bg: #f7f8f5;
+      --surface: #fff;
+      --text: #26332d;
+      --muted: #748078;
+      --line: #e5eae4;
+      --green: #547c63;
+      --green-soft: #edf4ee;
+      --amber: #8b6b31;
+      --amber-soft: #faf3e4;
+      --red: #a33c35;
+      --red-soft: #f9e9e7;
+      --radius: 16px;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: Inter, system-ui, sans-serif;
+      line-height: 1.5;
+    }
+
+    .page {
+      max-width: 1020px;
+      margin: 0 auto;
+      padding: 30px 22px 44px;
+    }
+
+    header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 18px;
+      padding-bottom: 24px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .brand { display: flex; align-items: center; gap: 11px; }
+
+    .logo {
+      width: 38px;
+      height: 38px;
+      display: grid;
+      place-items: center;
+      border-radius: 12px;
+      background: var(--green-soft);
+      color: var(--green);
+      font-weight: 800;
+    }
+
+    .brand-name { font-size: 20px; font-weight: 750; }
+    .brand-sub { color: var(--muted); font-size: 12px; }
+
+    .demo-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      border-radius: 999px;
+      padding: 7px 11px;
+      background: var(--amber-soft);
+      color: var(--amber);
+      font-size: 12px;
+      font-weight: 650;
+    }
+
+    .demo-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: currentColor;
+    }
+
+    .connected { background: var(--green-soft); color: var(--green); }
+    .error { background: var(--red-soft); color: var(--red); }
+
+    .intro { padding: 30px 0 22px; }
+    h1 { font-size: clamp(25px, 4vw, 32px); margin: 0 0 7px; }
+    .intro p { margin: 0; color: var(--muted); font-size: 14px; }
+    .section-title { font-size: 15px; margin: 5px 0 13px; }
+
+    .metrics {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 13px;
+    }
+
+    .metric, .panel {
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      min-width: 0;
+    }
+
+    .metric { padding: 18px 17px; }
+    .metric-label { color: var(--muted); font-size: 13px; }
+    .metric-value { font-size: clamp(23px, 3vw, 30px); font-weight: 750; margin-top: 10px; }
+    .metric-unit { font-size: 13px; color: var(--muted); font-weight: 550; }
+    .metric-note { font-size: 11px; color: var(--muted); margin-top: 5px; }
+
+    .lower {
+      display: grid;
+      grid-template-columns: .8fr 1.2fr;
+      gap: 14px;
+      margin-top: 24px;
+    }
+
+    .panel { padding: 20px; }
+    .panel h2 { font-size: 15px; margin: 0 0 14px; }
+    .status-row { display: flex; gap: 11px; align-items: flex-start; }
+    .status-icon {
+      width: 34px;
+      height: 34px;
+      display: grid;
+      place-items: center;
+      background: var(--amber-soft);
+      color: var(--amber);
+      border-radius: 11px;
+      flex-shrink: 0;
+    }
+
+    .status-main { font-weight: 650; font-size: 13px; }
+    .status-detail, .small-note { color: var(--muted); font-size: 12px; }
+    .small-note { margin-top: 16px; padding-top: 13px; border-top: 1px solid var(--line); }
+
+    .table-wrap { overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; font-size: 12px; }
+    th { color: var(--muted); text-align: left; padding: 0 8px 10px 0; }
+    td { padding: 11px 8px 11px 0; border-top: 1px solid var(--line); }
+    .sensor-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: #8aa991; margin-right: 7px; }
+    footer { color: var(--muted); text-align: center; font-size: 11px; margin-top: 28px; }
+
+    @media (max-width: 760px) {
+      .metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .lower { grid-template-columns: 1fr; }
+    }
+
+    @media (max-width: 430px) {
+      .page { padding: 20px 14px 30px; }
+      header { align-items: flex-start; }
+      .demo-pill { font-size: 11px; padding: 6px 8px; }
+      .metric { padding: 15px 13px; }
+      .metric-value { font-size: 25px; }
+      .panel { padding: 16px; }
+    }
+  </style>
+</head>
+
+<body>
+<main class="page">
+
+  <header>
+    <div class="brand">
+      <div class="logo">AB</div>
+      <div>
+        <div class="brand-name">AppBiom</div>
+        <div class="brand-sub">Monitorización ambiental</div>
+      </div>
+    </div>
+
+    <div class="demo-pill" id="estadoPildora">
+      <span class="demo-dot"></span>
+      <span id="textoPildora">Conectando...</span>
+    </div>
+  </header>
+
+  <section class="intro">
+    <h1>Resumen de sensores</h1>
+    <p>Últimas mediciones recibidas desde AppBiom.</p>
+  </section>
+
+  <section>
+    <h2 class="section-title">Mediciones</h2>
+
+    <div class="metrics">
+      <article class="metric">
+        <div class="metric-label">CO₂</div>
+        <div class="metric-value"><span id="co2">--</span> <span class="metric-unit">ppm</span></div>
+        <div class="metric-note">Concentración</div>
+      </article>
+
+      <article class="metric">
+        <div class="metric-label">Temperatura</div>
+        <div class="metric-value"><span id="temperatura">--</span> <span class="metric-unit">°C</span></div>
+        <div class="metric-note">Temperatura ambiente</div>
+      </article>
+
+      <article class="metric">
+        <div class="metric-label">Ruido</div>
+        <div class="metric-value"><span id="ruido">--</span> <span class="metric-unit">dB</span></div>
+        <div class="metric-note">Nivel sonoro</div>
+      </article>
+
+      <article class="metric">
+        <div class="metric-label">Contador</div>
+        <div class="metric-value"><span id="contador">--</span></div>
+        <div class="metric-note">Cambia con cada medida nueva</div>
+      </article>
+    </div>
+  </section>
+
+  <section class="lower">
+    <article class="panel">
+      <h2>Estado del sistema</h2>
+
+      <div class="status-row">
+        <div class="status-icon" id="iconoEstado">...</div>
+        <div>
+          <div class="status-main" id="estadoPrincipal">Conectando...</div>
+          <div class="status-detail" id="detalleEstado">
+            Consultando la API de AppBiom.
+          </div>
+        </div>
+      </div>
+
+      <div class="small-note" id="fechaMedicion">
+        Todavía no se ha recibido ninguna medición.
+      </div>
+    </article>
+
+    <article class="panel">
+      <h2>Última medición recibida</h2>
+
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>Sensor</th><th>Valor</th><th>Contador</th><th>Hora</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><span class="sensor-dot"></span><span id="tablaTipo">--</span></td>
+              <td id="tablaValor">--</td>
+              <td id="tablaContador">--</td>
+              <td id="tablaHora">--</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </article>
+  </section>
+
+  <footer>AppBiom · Prototipo universitario</footer>
+</main>
+
+<script src="logicaFake.js"></script>
+<script src="pagina.js"></script>
+<script>
+  // Endpoint PHP de la API REST y refresco cada 2 segundos.
+  new Pagina(new LogicaFake("/api/mediciones.php"), 2000).iniciar();
+</script>
+
+</body>
+</html>
