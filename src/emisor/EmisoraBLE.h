@@ -1,9 +1,9 @@
 // ---------------------------------------------------------------------
 // Fichero:     EmisoraBLE.h
 // Descripción: Emite anuncios iBeacon con la biblioteca Bluefruit.
-// Copyright:   (c) 2026 Julia Valén de Oliveira
+// Copyright:   (c) 2026 Matilde Calleja García
 // Fecha:       14/10/2026
-// Autor:       Julia Valén de Oliveira (a partir del código de
+// Autor:       Matilde Calleja García (a partir del código de
 //              Jordi Bataller i Mascarell)
 // Aportación:  Diseño por ingeniería inversa; código revisado. Se ha
 //              quitado el nombre y el TxPower del paquete principal

@@ -3,9 +3,9 @@
 // Descripción: Funciones puras para meter una medida en el major y el
 //              minor de un iBeacon. No dependen de Arduino ni de BLE,
 //              así que se pueden probar en el ordenador.
-// Copyright:   (c) 2026 Julia Valén de Oliveira
+// Copyright:   (c) 2026 Matilde Calleja García
 // Fecha:       14/10/2026
-// Autor:       Julia Valén de Oliveira
+// Autor:       Matilde Calleja García
 // Aportación:  Diseño propio; código generado con IA a partir del diseño
 //              y revisado por la autora.
 // ---------------------------------------------------------------------

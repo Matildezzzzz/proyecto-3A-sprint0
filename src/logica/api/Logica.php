@@ -14,7 +14,7 @@ require_once __DIR__ . '/AlmacenMediciones.php';
 
 class Logica
 {
-    const TIPOS_VALIDOS = [11, 12, 13, 14];   // CO2, temperatura, ruido y ozono
+    const TIPOS_VALIDOS = [11, 12, 13];   // CO2, temperatura y ruido
 
     private $almacen;
 

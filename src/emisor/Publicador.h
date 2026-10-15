@@ -2,9 +2,9 @@
 // Fichero:     Publicador.h
 // Descripción: Publica medidas como anuncios iBeacon: decide qué va en
 //              el major y en el minor y se lo pasa a la EmisoraBLE.
-// Copyright:   (c) 2026 Julia Valén de Oliveira
+// Copyright:   (c) 2026 Matilde Calleja García
 // Fecha:       14/10/2026
-// Autor:       Julia Valén de Oliveira (a partir del código de
+// Autor:       Matilde Calleja García (a partir del código de
 //              Jordi Bataller i Mascarell)
 // Aportación:  Diseño por ingeniería inversa; código revisado. La
 //              codificación se ha sacado a Codificacion.h para probarla.
