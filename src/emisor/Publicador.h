@@ -26,7 +26,7 @@ private:
   };
 
   EmisoraBLE laEmisora{
-    "GTI3A-2026",   // nombre de la emisora (lo busca la app)
+    "GTI3A-Matilde",   // nombre de la emisora (lo busca la app)
     0x004c,         // fabricante: Apple (iBeacon)
     4               // potencia de emisión (dBm)
   };
