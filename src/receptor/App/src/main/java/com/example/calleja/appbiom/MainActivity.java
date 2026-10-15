@@ -48,7 +48,7 @@ public class MainActivity extends Activity {
     private static final int CODIGO_PERMISOS = 1001;
     private static final int ID_FABRICANTE_APPLE = 0x004C;
     private static final String UUID_PROYECTO = "EPSG-GTI-PROY-3A";
-    private static final String NOMBRE_NUESTRO_DISPOSITIVO = "GTI3A-2026";
+    private static final String NOMBRE_NUESTRO_DISPOSITIVO = "GTI3A-Matilde";
     private static final String URL_SERVIDOR = "https://mcalgar2.upv.edu.es/api/mediciones.php";
 
     private static final int COLOR_OK = Color.parseColor("#0F766E");
