@@ -15,7 +15,7 @@
 //              y revisado por la autora.
 // ---------------------------------------------------------------------
 
-require_once __DIR__ . '/Logica.php';
+require_once __DIR__ . '/../business_logic/Logica.php';
 
 header('Content-Type: application/json; charset=utf-8');
 

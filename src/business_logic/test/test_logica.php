@@ -4,16 +4,16 @@
 // Descripción: Tests automáticos de Logica y AlmacenMediciones. Usan una
 //              base de datos SQLite en memoria con la misma tabla que
 //              MySQL, así que no hace falta servidor ni base de datos real.
-//              Se ejecutan desde src/logica con:
+//              Se ejecutan desde src/business_logic con:
 //                  php test/test_logica.php
 // Copyright:   (c) 2026 Matilde Calleja
 // Fecha:       15/10/2026
 // Autor:       Matilde Calleja
 // Aportación:  Tests generados con IA a partir del diseño
-//              (logica_design.md) y revisados por la autora.
+//              (business_logic_design.md) y revisados por la autora.
 // ---------------------------------------------------------------------
 
-require_once __DIR__ . '/../api/Logica.php';
+require_once __DIR__ . '/../Logica.php';
 
 $fallos = 0;
 $total = 0;
@@ -50,7 +50,7 @@ function lanzaArgumentoInvalido(callable $funcion)
 
 // --------------------------------------------------------------
 // Logica <-- logicaConBaseDeDatosVacia() <--
-// Tabla equivalente a src/bbdd/crear_bd.sql, en SQLite en memoria.
+// Tabla equivalente a src/database/crear_bd.sql, en SQLite en memoria.
 // --------------------------------------------------------------
 function logicaConBaseDeDatosVacia()
 {
