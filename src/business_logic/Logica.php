@@ -2,7 +2,7 @@
 // ---------------------------------------------------------------------
 // Fichero:     Logica.php
 // Descripción: Lógica del negocio. Valida y guarda medidas y devuelve
-//              la última. No sabe nada de HTTP.
+//              la última. No conoce la capa de comunicación.
 // Copyright:   (c) 2026 Matilde Calleja
 // Fecha:       14/10/2026
 // Autor:       Matilde Calleja

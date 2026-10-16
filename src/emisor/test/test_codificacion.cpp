@@ -3,9 +3,9 @@
 // Descripción: Tests de Codificacion.h. Se ejecutan en el ordenador,
 //              sin placa:
 //                  g++ -std=c++11 test_codificacion.cpp -o test && ./test
-// Copyright:   (c) 2026 Julia Valén de Oliveira
+// Copyright:   (c) 2026 Matilde Calleja
 // Fecha:       14/10/2026
-// Autor:       Julia Valén de Oliveira
+// Autor:       Matilde Calleja
 // Aportación:  Tests generados con IA a partir del diseño y revisados.
 // ---------------------------------------------------------------------
 #include <cstdio>
